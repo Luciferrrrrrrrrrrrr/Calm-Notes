@@ -8,6 +8,7 @@ import {
   Settings, 
   LogOut,
   Sparkles,
+  CreditCard,
   Menu,
   X
 } from "lucide-react";
@@ -23,6 +24,7 @@ export function Sidebar() {
     { name: "Dashboard", href: "/", icon: Home },
     { name: "New Session", href: "/new", icon: PlusCircle },
     { name: "All Notes", href: "/notes", icon: FileText },
+    { name: "Pricing", href: "/pricing", icon: CreditCard },
     { name: "Settings", href: "/settings", icon: Settings },
   ];
 

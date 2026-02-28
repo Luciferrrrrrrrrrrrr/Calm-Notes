@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, buildUrl, type CreateNoteRequest, type UpdateNoteRequest, type GenerateNoteInput } from "@shared/routes";
+import { api, buildUrl, type NoteInput, type NoteUpdateInput, type GenerateNoteInput } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
 
 // GET /api/notes
@@ -38,7 +38,7 @@ export function useCreateNote() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async (data: CreateNoteRequest) => {
+    mutationFn: async (data: NoteInput) => {
       const validated = api.notes.create.input.parse(data);
       const res = await fetch(api.notes.create.path, {
         method: api.notes.create.method,
@@ -73,7 +73,7 @@ export function useUpdateNote() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: number } & UpdateNoteRequest) => {
+    mutationFn: async ({ id, ...updates }: { id: number } & NoteUpdateInput) => {
       const validated = api.notes.update.input.parse(updates);
       const url = buildUrl(api.notes.update.path, { id });
       const res = await fetch(url, {

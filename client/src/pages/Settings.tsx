@@ -1,19 +1,25 @@
 import { Layout } from "@/components/Layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
-import { LogOut, Shield, User, Bell } from "lucide-react";
+import { useSubscription } from "@/hooks/use-subscription";
+import { LogOut, CreditCard, User, Sparkles, Loader2 } from "lucide-react";
+import { Link } from "wouter";
 
 export default function Settings() {
   const { user, logout } = useAuth();
+  const { plan, isPro, usage, openPortal, isOpeningPortal } = useSubscription();
+
+  const usagePercent = usage?.limit ? Math.round((usage.generations / usage.limit) * 100) : 0;
 
   return (
     <Layout>
       <div className="max-w-2xl mx-auto space-y-8">
         <h1 className="text-3xl font-heading font-bold">Settings</h1>
 
+        {/* Profile */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -38,46 +44,65 @@ export default function Settings() {
           </CardContent>
         </Card>
 
+        {/* Billing & Subscription */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-               <Shield className="w-5 h-5 text-primary" /> Security & Privacy
+              <CreditCard className="w-5 h-5 text-primary" /> Subscription
             </CardTitle>
-            <CardDescription>Configure application security preferences.</CardDescription>
+            <CardDescription>Manage your plan and billing.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-             <div className="flex items-center justify-between">
-               <div className="space-y-0.5">
-                 <Label className="text-base">Auto-Lock</Label>
-                 <p className="text-sm text-muted-foreground">Lock application after 15 minutes of inactivity.</p>
-               </div>
-               <Switch defaultChecked />
-             </div>
-             
-             <div className="flex items-center justify-between">
-               <div className="space-y-0.5">
-                 <Label className="text-base">Mask Client Names</Label>
-                 <p className="text-sm text-muted-foreground">Show initials only in dashboard view.</p>
-               </div>
-               <Switch />
-             </div>
-          </CardContent>
-        </Card>
+            <div className="flex items-center justify-between p-4 bg-secondary/30 rounded-xl">
+              <div>
+                <p className="text-sm text-muted-foreground">Current Plan</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-lg font-bold font-heading capitalize">{plan}</span>
+                  <Badge variant={isPro ? "default" : "secondary"} className={isPro ? "bg-primary" : ""}>
+                    {isPro ? "Active" : "Free Tier"}
+                  </Badge>
+                </div>
+              </div>
+              {isPro ? (
+                <Button
+                  variant="outline"
+                  onClick={() => openPortal()}
+                  disabled={isOpeningPortal}
+                  className="gap-2"
+                >
+                  {isOpeningPortal && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Manage Billing
+                </Button>
+              ) : (
+                <Link href="/pricing">
+                  <Button className="bg-primary hover:bg-primary/90 gap-2">
+                    <Sparkles className="w-4 h-4" /> Upgrade
+                  </Button>
+                </Link>
+              )}
+            </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-               <Bell className="w-5 h-5 text-primary" /> Notifications
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-             <div className="flex items-center justify-between">
-               <div className="space-y-0.5">
-                 <Label className="text-base">Email Summaries</Label>
-                 <p className="text-sm text-muted-foreground">Receive weekly summary of sessions.</p>
-               </div>
-               <Switch />
-             </div>
+            {/* Usage */}
+            {usage && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">AI Generations This Month</span>
+                  <span className="font-medium">
+                    {usage.generations} / {usage.limit ?? "∞"}
+                  </span>
+                </div>
+                {usage.limit && (
+                  <Progress value={usagePercent} className="h-2" />
+                )}
+                {usage.limit && usagePercent >= 80 && (
+                  <p className="text-xs text-destructive">
+                    {usagePercent >= 100
+                      ? "Limit reached. Upgrade for unlimited generations."
+                      : "Approaching limit. Consider upgrading."}
+                  </p>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

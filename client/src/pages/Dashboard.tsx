@@ -3,7 +3,7 @@ import { Layout } from "@/components/Layout";
 import { NoteCard } from "@/components/NoteCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Search, Filter } from "lucide-react";
+import { Plus, Search, Filter, FileText } from "lucide-react";
 import { Link } from "wouter";
 import { Input } from "@/components/ui/input";
 import { useState } from "react";

@@ -13,6 +13,7 @@ import NewNote from "@/pages/NewNote";
 import NoteDetail from "@/pages/NoteDetail";
 import NotesList from "@/pages/NotesList";
 import Settings from "@/pages/Settings";
+import Pricing from "@/pages/Pricing";
 
 // Wrapper for protected routes
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -66,6 +67,9 @@ function Router() {
       </Route>
       <Route path="/settings">
          <ProtectedRoute component={Settings} />
+      </Route>
+      <Route path="/pricing">
+         <ProtectedRoute component={Pricing} />
       </Route>
 
       {/* Fallback */}

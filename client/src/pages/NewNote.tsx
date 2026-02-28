@@ -9,7 +9,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useCreateNote, useGenerateNote } from "@/hooks/use-notes";
-import { Loader2, Wand2, Save, ArrowLeft, RefreshCw } from "lucide-react";
+import { Loader2, Wand2, Save, ArrowLeft, RefreshCw, Sparkles } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState, useEffect } from "react";
 import { format } from "date-fns";

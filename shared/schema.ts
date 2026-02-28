@@ -3,8 +3,8 @@ import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// Import auth models - REQUIRED for Replit Auth
 export * from "./models/auth";
+export * from "./models/subscription";
 
 // === TABLE DEFINITIONS ===
 
@@ -26,10 +26,6 @@ export const notes = pgTable("notes", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
-
-// === RELATIONS ===
-// (None strictly needed for MVP if we just store userId as text, 
-// but we could add a relation to users if we imported the users table object here)
 
 // === BASE SCHEMAS ===
 export const insertNoteSchema = createInsertSchema(notes).omit({ 

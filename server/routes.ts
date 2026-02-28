@@ -1,14 +1,18 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
+import { setupAuth, registerAuthRoutes, isAuthenticated } from "./auth";
+import { registerBillingRoutes, getUserSubscription, getUserUsage, PLANS, type PlanKey } from "./billing";
 import { api } from "@shared/routes";
 import { z } from "zod";
+import { db } from "./db";
+import { usage } from "@shared/schema";
+import { eq, sql } from "drizzle-orm";
 import OpenAI from "openai";
+import rateLimit from "express-rate-limit";
 
 const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 export async function registerRoutes(
@@ -16,12 +20,22 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   // Setup Auth
-  await setupAuth(app);
+  setupAuth(app);
   registerAuthRoutes(app);
+  registerBillingRoutes(app);
+
+  // Rate limit all API routes (100 req/15min per IP)
+  app.use("/api", rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: "Too many requests, please try again later" },
+  }));
 
   // Protected Notes Routes
   app.get(api.notes.list.path, isAuthenticated, async (req, res) => {
-    const userId = (req.user as any).claims.sub;
+    const userId = (req.user as any).id;
     const notes = await storage.getNotes(userId);
     res.json(notes);
   });
@@ -34,8 +48,7 @@ export async function registerRoutes(
       return res.status(404).json({ message: "Note not found" });
     }
     
-    // Ensure the note belongs to the authenticated user
-    const userId = (req.user as any).claims.sub;
+    const userId = (req.user as any).id;
     if (note.userId !== userId) {
        return res.status(401).json({ message: "Unauthorized access to note" });
     }
@@ -45,8 +58,7 @@ export async function registerRoutes(
 
   app.post(api.notes.create.path, isAuthenticated, async (req, res) => {
     try {
-      const userId = (req.user as any).claims.sub;
-      // Force userId to match authenticated user
+      const userId = (req.user as any).id;
       const noteData = { ...req.body, userId };
       
       const input = api.notes.create.input.parse(noteData);
@@ -72,7 +84,7 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Note not found" });
       }
 
-      const userId = (req.user as any).claims.sub;
+      const userId = (req.user as any).id;
       if (note.userId !== userId) {
         return res.status(401).json({ message: "Unauthorized access to note" });
       }
@@ -99,7 +111,7 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Note not found" });
       }
 
-      const userId = (req.user as any).claims.sub;
+      const userId = (req.user as any).id;
       if (note.userId !== userId) {
         return res.status(401).json({ message: "Unauthorized access to note" });
       }
@@ -108,9 +120,91 @@ export async function registerRoutes(
       res.status(204).send();
   });
 
-  // Generate Note using AI
+  // ─── PDF Export ────────────────────────────────────────────────
+  app.get("/api/notes/:id/export/pdf", isAuthenticated, async (req, res) => {
+    const noteId = Number(req.params.id);
+    const note = await storage.getNote(noteId);
+
+    if (!note) return res.status(404).json({ message: "Note not found" });
+
+    const userId = (req.user as any).id;
+    if (note.userId !== userId) return res.status(401).json({ message: "Unauthorized" });
+
+    const PDFDocument = (await import("pdfkit")).default;
+    const doc = new PDFDocument({ margin: 50, size: "LETTER" });
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${(note.clientName || "note").replace(/[^a-zA-Z0-9]/g, "_")}_${note.selectedFormat || "SOAP"}.pdf"`
+    );
+    doc.pipe(res);
+
+    // Header
+    doc.fontSize(20).font("Helvetica-Bold").text("CalmNotes", { align: "center" });
+    doc.moveDown(0.3);
+    doc.fontSize(10).font("Helvetica").fillColor("#666")
+      .text("Clinical Documentation", { align: "center" });
+    doc.moveDown(1);
+
+    // Separator
+    doc.strokeColor("#ddd").lineWidth(1)
+      .moveTo(50, doc.y).lineTo(562, doc.y).stroke();
+    doc.moveDown(0.5);
+
+    // Meta
+    doc.fontSize(11).fillColor("#333").font("Helvetica-Bold");
+    if (note.clientName) doc.text(`Client: ${note.clientName}`);
+    if (note.sessionDate) {
+      const d = new Date(note.sessionDate);
+      doc.font("Helvetica").text(`Date: ${d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}`);
+    }
+    if (note.sessionType) doc.text(`Type: ${note.sessionType}`);
+    if (note.selectedFormat) doc.font("Helvetica-Bold").text(`Format: ${note.selectedFormat}`);
+    if (note.riskFlags) {
+      doc.moveDown(0.3);
+      doc.fillColor("#c00").font("Helvetica-Bold").text(`⚠ Risk Flags: ${note.riskFlags}`);
+    }
+
+    doc.moveDown(0.8);
+    doc.strokeColor("#ddd").lineWidth(1)
+      .moveTo(50, doc.y).lineTo(562, doc.y).stroke();
+    doc.moveDown(0.5);
+
+    // Content
+    const content = (note.structuredOutput as any)?.content || note.rawNotes || "No content.";
+    doc.fontSize(10).fillColor("#222").font("Helvetica").text(content, {
+      lineGap: 4,
+      paragraphGap: 8,
+    });
+
+    // Footer
+    doc.moveDown(2);
+    doc.fontSize(8).fillColor("#999")
+      .text(`Generated by CalmNotes • Note ID: ${note.id} • ${new Date().toISOString().split("T")[0]}`, { align: "center" });
+
+    doc.end();
+  });
+
+  // Generate Note using AI (with usage gating)
   app.post(api.notes.generate.path, isAuthenticated, async (req, res) => {
     try {
+      const userId = (req.user as any).id;
+
+      // Check usage limits
+      const sub = await getUserSubscription(userId);
+      const userUsage = await getUserUsage(userId);
+      const plan = (sub?.plan || "free") as PlanKey;
+      const limit = PLANS[plan]?.generationsPerMonth ?? PLANS.free.generationsPerMonth;
+      const currentCount = userUsage?.generationsCount || 0;
+
+      if (limit !== Infinity && currentCount >= limit) {
+        return res.status(429).json({
+          message: `Free plan limit reached (${limit} generations/month). Upgrade to Pro for unlimited access.`,
+          code: "USAGE_LIMIT_EXCEEDED",
+        });
+      }
+
       const { rawNotes, transcript, format, clientName, sessionType, riskFlags } = req.body;
 
       if (!rawNotes && !transcript) {
@@ -140,7 +234,7 @@ export async function registerRoutes(
       Output the note structure clearly. Do not include conversational filler. Just the note content.`;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-5.1",
+        model: "gpt-4o",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: "Generate the note." }
@@ -150,6 +244,15 @@ export async function registerRoutes(
       });
 
       const generatedContent = response.choices[0].message.content || "Failed to generate note.";
+
+      // Increment usage counter
+      await db
+        .insert(usage)
+        .values({ userId, generationsCount: 1, periodStart: new Date() })
+        .onConflictDoUpdate({
+          target: usage.userId,
+          set: { generationsCount: sql`${usage.generationsCount} + 1` },
+        });
 
       res.json({
         content: generatedContent,
